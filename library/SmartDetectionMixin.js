@@ -51,8 +51,10 @@ const SmartDetectionMixin = {
   _getZoneInfo(payload) {
     let zones = '';
     let zoneIds = [];
+    let known = false;
     if (payload && payload.metadata && payload.metadata.zonesStatus
       && typeof payload.metadata.zonesStatus === 'object') {
+      known = true;
       let zoneNameMap = {};
       try {
         let smartDetectZones = null;
@@ -82,7 +84,7 @@ const SmartDetectionMixin = {
       zoneIds = activeZones.map(([key]) => String(key));
       zones = activeZones.map(([key]) => zoneNameMap[key] || key).join(', ');
     }
-    return { zones, zoneIds };
+    return { zones, zoneIds, known };
   },
 
   /**
@@ -92,7 +94,7 @@ const SmartDetectionMixin = {
   _dispatchZoneSensors(eventId, event) {
     try {
       const driver = this.homey.drivers.getDriver('protect-zone-sensor');
-      driver.onSmartDetectionUpdate(this.getData().id, eventId, event.detectionTypes, event.zoneIds);
+      driver.onSmartDetectionUpdate(this.getData().id, eventId, event.detectionTypes, event.currentZoneIds || event.zoneIds);
     } catch (e) {
       this.homey.app.debug(`[SmartDetection] zone sensor dispatch failed: ${e}`);
     }
@@ -191,6 +193,11 @@ const SmartDetectionMixin = {
 
     // Zones can be reported on a later frame, and later frames may omit metadata: keep what we know.
     const zoneInfo = this._getZoneInfo(payload);
+    if (zoneInfo.known) {
+      // Every zone 'none' means in no zone right now (the zone sensors need that); zones/zoneIds below
+      // keep the last zones the detection was in, for the triggers.
+      event.currentZoneIds = zoneInfo.zoneIds;
+    }
     if (zoneInfo.zoneIds.length > 0) {
       event.zones = zoneInfo.zones;
       event.zoneIds = zoneInfo.zoneIds;
