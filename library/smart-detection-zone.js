@@ -16,11 +16,35 @@ function matchesZone(args, state) {
 }
 
 /**
+ * The camera's zones. The device reads them once at start; when it started before the V1 bootstrap
+ * was loaded (V2 was ready first) it only has the V2 camera, which carries no zones: look in the
+ * bootstrap again, the same way SmartDetectionMixin._getZoneInfo does.
+ */
+function getDeviceZones(homey, device) {
+  if (device && Array.isArray(device._smartDetectZones) && device._smartDetectZones.length > 0) {
+    return device._smartDetectZones;
+  }
+  try {
+    if (device && homey.app.isV1Available()) {
+      const bootstrap = homey.app.api.getBootstrap();
+      const camera = bootstrap && bootstrap.cameras
+        && bootstrap.cameras.find((c) => c.id === device.getData().id);
+      if (camera && Array.isArray(camera.smartDetectZones)) {
+        device._smartDetectZones = camera.smartDetectZones;
+      }
+    }
+  } catch (e) {
+    // No bootstrap to read: only "any zone" is offered
+  }
+  return (device && Array.isArray(device._smartDetectZones)) ? device._smartDetectZones : [];
+}
+
+/**
  * Autocomplete results for the `zone` argument: "any zone" + the camera's own zone names.
  */
 function listZones(homey, device, query) {
   const needle = String(query || '').toLowerCase();
-  const zones = (device && Array.isArray(device._smartDetectZones)) ? device._smartDetectZones : [];
+  const zones = getDeviceZones(homey, device);
   const results = [{ id: ANY_ZONE_ID, name: homey.__('flow.any_zone') }];
   for (const zone of zones) {
     const name = zone.name || String(zone.id);
