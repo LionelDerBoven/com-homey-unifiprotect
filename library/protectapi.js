@@ -344,6 +344,22 @@ class ProtectAPI extends BaseClass {
     });
   }
 
+  getEvent(eventId) {
+    return new Promise((resolve, reject) => {
+      this.webclient.get(`events/${eventId}`)
+        .then((response) => {
+          const result = JSON.parse(response);
+
+          if (result) {
+            return resolve(result);
+          }
+          return reject(new Error('Error obtaining event.'));
+
+        })
+        .catch((error) => reject(error));
+    });
+  }
+
   getCameras() {
     return new Promise((resolve, reject) => {
       this.webclient.get('cameras')

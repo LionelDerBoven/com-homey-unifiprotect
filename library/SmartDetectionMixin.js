@@ -2,6 +2,9 @@
 
 const SmartDetectionEvent = require('./Models/SmartDetectionEvent');
 
+// Only detections younger than this are checked with Protect after a reconnect.
+const RECONCILE_MAX_AGE_MS = 60 * 60 * 1000;
+
 /**
  * SmartDetectionMixin
  *
@@ -140,6 +143,35 @@ const SmartDetectionMixin = {
     const duration = event.detectionTime ? Math.max(0, Math.round((event.endTime - event.detectionTime) / 1000)) : 0;
     this.homey.app.debug(`[SmartDetection] ended id=${eventId} types=${event.detectionTypes.join(',')} duration=${duration}`);
     this.triggerSmartDetectionEndedTrigger(event.detectionTypes.join(', '), score, event.zones || '', duration, event.zoneIds || [], event.direction || '');
+  },
+
+  /**
+   * After a V1 reconnect: closing frames sent during the gap are lost. Ask Protect (REST) about the
+   * smart detections we still think are open and close the ones it has ended. A detection that is still
+   * running (or a failed request) is left alone: the stale timer of the zone sensors stays the backstop.
+   */
+  async reconcileSmartDetections() {
+    const now = this.homey.app.getUnixTimestamp();
+    const openIds = [];
+    for (const [eventId, event] of this._getEventStore()) {
+      if (event.kind === 'smart' && !event.endedFired
+        && event.detectionTypes && event.detectionTypes.length > 0
+        && !(now - event.detectionTime > RECONCILE_MAX_AGE_MS)) {
+        openIds.push(eventId);
+      }
+    }
+    for (const eventId of openIds) {
+      try {
+        // Sequential: one request at a time
+        // eslint-disable-next-line no-await-in-loop
+        const remote = await this.homey.app.api.getEvent(eventId);
+        if (remote && remote.end) {
+          this.onSmartDetectionEnd({ end: remote.end }, eventId);
+        }
+      } catch (e) {
+        this.homey.app.debug(`[SmartDetection] reconcile [${eventId}] failed: ${e}`);
+      }
+    }
   },
 
   onSmartDetection(payload, actionType, eventId) {

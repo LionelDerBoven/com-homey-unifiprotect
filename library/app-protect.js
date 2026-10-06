@@ -33,6 +33,35 @@ class AppProtect extends BaseClass {
       this.homey.app.api.on('protectv1-connection-error', (details) => {
         this._handleConnectionError('v1', details);
       });
+      // Registered once (onInit), not per reconnect
+      this.homey.app.api.on('protectv1-connection-change', (details) => {
+        if (details.state === 'connected') {
+          this._reconcileSmartDetections().catch(this.error);
+        }
+      });
+    }
+  }
+
+  /**
+   * Closing frames of smart detections are lost while the V1 websocket is down: let every camera and
+   * doorbell ask Protect about the detections it still has open.
+   */
+  async _reconcileSmartDetections() {
+    if (this._reconcilingDetections) {
+      return;
+    }
+    this._reconcilingDetections = true;
+    try {
+      for (const driverId of ['protectcamera', 'protectdoorbell']) {
+        for (const device of this.homey.drivers.getDriver(driverId).getDevices()) {
+          // eslint-disable-next-line no-await-in-loop
+          await device.reconcileSmartDetections();
+        }
+      }
+    } catch (e) {
+      this.homey.app.debug(`[AppProtect] reconcile smart detections failed: ${e}`);
+    } finally {
+      this._reconcilingDetections = false;
     }
   }
 
